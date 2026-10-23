@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 # Package build output: AnyKernel3 flashable zip and, optionally, a boot image.
 
