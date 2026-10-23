@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 # Package build output: AnyKernel3 flashable zip and, optionally, a boot image.
 
@@ -34,25 +35,52 @@ make_anykernel3() {
 	else
 		retry 3 git clone -q --depth=1 https://github.com/osm0sis/AnyKernel3 "$AK3" \
 			|| die "failed to clone AnyKernel3"
-		# Device checks are meaningless here: we do not know the target's
-		# ro.product.device, and the zip is flashed deliberately by its builder.
-		sed -i 's/do.devicecheck=1/do.devicecheck=0/g' "${AK3}/anykernel.sh"
-		sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' "${AK3}/anykernel.sh"
-		sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' "${AK3}/anykernel.sh"
-				# Configure AnyKernel3 for Poco F4 (munch).
-		sed -i 's/^do.devicecheck=0$/do.devicecheck=1/' "${AK3}/anykernel.sh"
+
+		# Configure AnyKernel3 for Poco F4 (munch).
+		# Fail closed if the expected template settings are missing.
+		grep -q '^do.devicecheck=' "${AK3}/anykernel.sh" \
+			|| die "AnyKernel3 device-check setting not found"
+		grep -q '^supported.versions=' "${AK3}/anykernel.sh" \
+			|| die "AnyKernel3 supported.versions setting not found"
+
+		sed -i 's/^do.devicecheck=.*/do.devicecheck=1/' "${AK3}/anykernel.sh"
 		sed -i '/^device.name[1-5]=/d' "${AK3}/anykernel.sh"
 		sed -i '/^supported.versions=/i device.name1=munch' "${AK3}/anykernel.sh"
 
-		# Remove unrelated legacy tuna ramdisk and fstab modifications.
+		# Use automatic boot partition and slot detection.
+		# These replacements only work if the template has the expected lines.
+		sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' "${AK3}/anykernel.sh"
+		sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' "${AK3}/anykernel.sh"
+
+		# Remove the known legacy tuna patch block, if present.
 		sed -i '/^# init.rc$/,/^append_file fstab.tuna "usbdisk" fstab;$/d' "${AK3}/anykernel.sh"
+
+		# Do not package if legacy device-specific references remain.
+		if grep -Eq 'tuna|omap_hsmmc|init\.tuna\.rc|fstab\.tuna' "${AK3}/anykernel.sh"; then
+			die "Legacy tuna/omap device references remain in anykernel.sh"
+		fi
+
+		# Verify device checking is enabled and munch is listed.
+		grep -qx 'do.devicecheck=1' "${AK3}/anykernel.sh" \
+			|| die "AnyKernel3 device check was not enabled"
+		grep -qx 'device.name1=munch' "${AK3}/anykernel.sh" \
+			|| die "AnyKernel3 munch device entry was not added"
 	fi
 
+	# Confirm the selected kernel image exists before packaging.
+	[ -s "${BOOT_OUT}/${KERNEL_IMAGE_NAME}" ] \
+		|| die "kernel image missing or empty: ${BOOT_OUT}/${KERNEL_IMAGE_NAME}"
+
 	cp "${BOOT_OUT}/${KERNEL_IMAGE_NAME}" "${AK3}/" \
-		|| die "kernel image missing at ${BOOT_OUT}/${KERNEL_IMAGE_NAME}"
+		|| die "kernel image copy failed"
+
+	# Only include DTBO when explicitly validated and enabled.
 	if is_true "${CHECK_DTBO_IS_OK:-false}"; then
+		[ -s "${BOOT_OUT}/dtbo.img" ] \
+			|| die "DTBO packaging requested, but dtbo.img is missing or empty"
 		cp "${BOOT_OUT}/dtbo.img" "${AK3}/"
 	fi
+
 	rm -rf "${AK3}/.git" "${AK3}/.github" "${AK3}/README.md"
 
 	ok "AnyKernel3 package assembled"
@@ -77,6 +105,9 @@ make_boot_image() {
 
 	python3 "${tools}/unpack_bootimg.py" --boot_img boot-source.img >/dev/null \
 		|| die "failed to unpack the source boot image"
+
+	[ -s "${BOOT_OUT}/${KERNEL_IMAGE_NAME}" ] \
+		|| die "kernel image missing or empty: ${BOOT_OUT}/${KERNEL_IMAGE_NAME}"
 
 	cp "${BOOT_OUT}/${KERNEL_IMAGE_NAME}" "${WORKSPACE}/out/kernel" \
 		|| die "could not stage the new kernel into the unpacked ramdisk"
