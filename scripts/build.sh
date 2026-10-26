@@ -131,16 +131,22 @@ build_kernel() {
 		info "ccache enabled (dir: ${CCACHE_DIR})"
 	fi
 
-	cd "$KERNEL_DIR"
+	
+cd "$KERNEL_DIR"
 	info "make ${args} ${KERNEL_CONFIG}"
 	# shellcheck disable=SC2086
 	make -j"$(nproc --all)" CC=clang $args "${KERNEL_CONFIG}" \
 		|| die "defconfig generation failed"
 
+	echo "===== FINAL BPF CONFIG ====="
+	grep -E '^(CONFIG_(BPF|BPF_SYSCALL|BPF_JIT|BPF_LSM|CGROUP_BPF|NET_CLS_BPF|NET_ACT_BPF|DEBUG_INFO_BTF|BPF_EVENTS)=|# CONFIG_(BPF_LSM|NET_ACT_BPF|DEBUG_INFO_BTF) is not set)' out/.config || true
+	echo "===== END BPF CONFIG ====="
+
 	info "make ${args}"
 	# shellcheck disable=SC2086
 	make -j"$(nproc --all)" CC="$cc" $args \
 		|| die "kernel build failed"
+
 
 	endgroup
 }
