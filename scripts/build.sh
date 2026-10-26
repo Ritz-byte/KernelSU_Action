@@ -103,21 +103,15 @@ make_args() {
 	fi
 }
 
+
 build_kernel() {
 	group "Building kernel"
 	export PATH="${CLANG_PATH:-}:${PATH}"
 	export KBUILD_BUILD_HOST=${KBUILD_BUILD_HOST:-Github-Action}
 	export KBUILD_BUILD_USER=${KBUILD_BUILD_USER:-kernelsu-action}
 
-	# DISABLE_LTO is this action's boolean configuration switch, but several
-	# Android kernel trees use the same Make variable for compiler flags (for
-	# example, "-fno-lto").  Leaving our value in the environment makes a
-	# non-LTO build invoke `clang ... false ...`, treating "false" as an input
-	# file.  prepare_defconfig() has already consumed the action setting, so let
-	# Kbuild own the name from this point on.
 	unset DISABLE_LTO
 
-	# Custom manager signature, when the user builds their own manager APK.
 	if [ -n "${KSU_EXPECTED_SIZE:-}" ] && [ -n "${KSU_EXPECTED_HASH:-}" ]; then
 		export KSU_EXPECTED_SIZE KSU_EXPECTED_HASH
 		info "using custom manager signature (size=${KSU_EXPECTED_SIZE})"
@@ -131,15 +125,14 @@ build_kernel() {
 		info "ccache enabled (dir: ${CCACHE_DIR})"
 	fi
 
-	
-cd "$KERNEL_DIR"
+	cd "$KERNEL_DIR"
 	info "make ${args} ${KERNEL_CONFIG}"
 	# shellcheck disable=SC2086
 	make -j"$(nproc --all)" CC=clang $args "${KERNEL_CONFIG}" \
 		|| die "defconfig generation failed"
 
 	echo "===== FINAL BPF CONFIG ====="
-	grep -E '^(CONFIG_(BPF|BPF_SYSCALL|BPF_JIT|BPF_LSM|CGROUP_BPF|NET_CLS_BPF|NET_ACT_BPF|DEBUG_INFO_BTF|BPF_EVENTS)=|# CONFIG_(BPF_LSM|NET_ACT_BPF|DEBUG_INFO_BTF) is not set)' out/.config || true
+	grep -E '^(CONFIG_(BPF|BPF_SYSCALL|BPF_JIT|BPF_LSM|CGROUP_BPF|NET_CLS_BPF|NET_ACT_BPF|NETFILTER_XT_MATCH_BPF|INET_UDP_DIAG|DEBUG_INFO_BTF|BPF_EVENTS)=|# CONFIG_(BPF_LSM|NET_ACT_BPF|NETFILTER_XT_MATCH_BPF|INET_UDP_DIAG|DEBUG_INFO_BTF) is not set)' out/.config || true
 	echo "===== END BPF CONFIG ====="
 
 	info "make ${args}"
@@ -147,9 +140,9 @@ cd "$KERNEL_DIR"
 	make -j"$(nproc --all)" CC="$cc" $args \
 		|| die "kernel build failed"
 
-
 	endgroup
 }
+
 
 # --------------------------------------------------------------- verify ---
 
